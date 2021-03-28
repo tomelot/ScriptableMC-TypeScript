@@ -7,7 +7,7 @@
         "outDir": "dist",
         "rootDir": "src",
         //"lib": ["ES5", "ES2015", "ES2016", "ES2017", "ES2018", "ES2019", "ScriptHost"],
-        "types": [],
+        "types": ["node"],
 
         "esModuleInterop": true,
         "moduleResolution": "node",

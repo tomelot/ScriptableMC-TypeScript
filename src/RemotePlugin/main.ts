@@ -1,5 +1,5 @@
-import express from "express";
-import jwt from 'jsonwebtoken';
+const express = require('express');
+const jwt = require('jsonwebtoken');
 
 import JsPlugin from '../lib/JsPlugin.js';
 import ChatColor from '../lib/org/bukkit/ChatColor.js';
@@ -75,11 +75,11 @@ class RemoteBlock {
 
         this.setName(name);
     }
-    
+
     receiveRedstone(redstoneLevel: number): string {
         return `${this.name} received a redstone level of ${redstoneLevel}`;
     }
-    
+
     receiveCommand(command: string): string {
         return `${this.name} received the command ${command}`;
     }
@@ -206,42 +206,42 @@ export default class RemotePlugin extends JsPlugin {
         deleteCmd.setTabCompleter(this.onTabCompleteDeleteAndShow.bind(this));
 
         this.plugin = this.server.getPluginManager().getPlugins()[0];
-        
+
         // this.server.dispatchCommand(Bukkit.getConsoleSender(), "tell @a hi");
 
         this.StartExpressServer()
         console.log("done");
     }
 
-    StartExpressServer(){
+    StartExpressServer() {
         const app = express();
         app.use(express.text());
-        
+
         app.post("/api", (req, res) => {
             console.log(`jwt: ${req.body}`);
-        
-            const secrets: Record<string, string>  = { ori: "superSecretPassword", tom: "ImStupid" };
-        
+
+            const secrets: Record<string, string> = { ori: "superSecretPassword", tom: "ImStupid" };
+
             const message = jwt.decode(req.body) as Message;
-        
+
             console.log(`decoded message:${message}\n`);
-        
-        
+
+
             const secret: string = secrets[message.senderName];
             if (!secret) {
                 return res.send(`${message.senderName} is not in the white list.\nonly the following are accepted: ${Object.keys(secrets)}`);
             }
-        
+
             try {
                 jwt.verify(req.body, secrets[message.senderName])
             } catch (err) {
                 return res.send(`the signiture is incorrect for the following message payload`);
             }
-        
-            let result: string= this.receiveMessage(message)
-        
+
+            let result: string = this.receiveMessage(message)
+
             res.send(result);
-        
+
         });
 
         app.listen(this.port, () => {
@@ -251,15 +251,15 @@ export default class RemotePlugin extends JsPlugin {
     }
 
     receiveMessage(message: Message): string {
-        
+
         let result: string = "message doesn't contain redstoneLevel or command";
 
         let receiverName: string = message.receiverName;
-        if (!receiverName){
+        if (!receiverName) {
             return 'missing receiverName in the message';
         }
 
-        let remoteBlock: RemoteBlock=this.remoteBlocks[receiverName];
+        let remoteBlock: RemoteBlock = this.remoteBlocks[receiverName];
         if (!remoteBlock)
             return `${receiverName} doesn't exit`;
 
@@ -267,14 +267,14 @@ export default class RemotePlugin extends JsPlugin {
         if (message.redstoneLevel) {
             result = remoteBlock.receiveRedstone(message.redstoneLevel);
         }
-    
+
         if (message.command) {
             result = remoteBlock.receiveCommand(message.command);
         }
 
         return result;
     }
-    
+
 
     getRemoteBlockByLocation(loc: Location): RemoteBlock {
         for (let key in this.remoteBlocks) {
@@ -531,7 +531,7 @@ export default class RemotePlugin extends JsPlugin {
                 if (args[0] in this.remoteBlocks) {
                     result.push("127.0.0.1");
                 } else {
-                    if ('getTargetBlock' in sender) {  
+                    if ('getTargetBlock' in sender) {
                         result.push(sender.getTargetBlock(null, 50).getY().toString());
                     }
                 }
