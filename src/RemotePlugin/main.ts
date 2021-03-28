@@ -28,6 +28,7 @@ import Location from '../lib/org/bukkit/Location.js'
 import FixedMetadataValue from '../lib/org/bukkit/metadata/FixedMetadataValue.js';
 import Plugin from '../lib/org/bukkit/plugin/Plugin.js'
 import ArmorStand from '../lib/org/bukkit/entity/ArmorStand.js'
+import Bukkit from '../lib/org/bukkit/Bukkit.js';
 
 function enumKeys<O extends object, K extends keyof O = keyof O>(obj: O): K[] {
     return Object.keys(obj).filter(k => Number.isNaN(+k)) as K[];
@@ -156,6 +157,7 @@ class RemoteBlock {
 }
 
 export default class RemotePlugin extends JsPlugin {
+    httpPort = 8080;
     remoteBlocks = {};
     plugin: Plugin;
 
@@ -169,16 +171,21 @@ export default class RemotePlugin extends JsPlugin {
         let setConfigCmd = this.newCommand("remoteBlock-SetConfig");
         setConfigCmd.setExecutor(this.onSetConfigCmdExecute.bind(this));
         this.registerCommand(setConfigCmd);
+        setConfigCmd.setTabCompleter(this.onTabCompleteSet.bind(this));
 
         let showConfigCmd = this.newCommand("remoteBlock-ShowConfig");
         showConfigCmd.setExecutor(this.onShowConfigCmdExecute.bind(this));
         this.registerCommand(showConfigCmd);
+        showConfigCmd.setTabCompleter(this.onTabCompleteDeleteAndShow.bind(this));
 
         let deleteCmd = this.newCommand("remoteBlock-Delete");
         deleteCmd.setExecutor(this.onDeleteCmdExecute.bind(this));
         this.registerCommand(deleteCmd);
+        deleteCmd.setTabCompleter(this.onTabCompleteDeleteAndShow.bind(this));
 
         this.plugin = this.server.getPluginManager().getPlugins()[0];
+        
+        // this.server.dispatchCommand(Bukkit.getConsoleSender(), "tell @a hi");
 
         console.log("done");
     }
@@ -284,6 +291,36 @@ export default class RemotePlugin extends JsPlugin {
         return true;
     }
 
+    onTabCompleteDeleteAndShow(sender: Player, command: Command, label: string, args: Array<string>): Array<string> {
+        let result: Array<string> = [];
+
+        switch (args.length) {
+            case 1: {
+                for (let key in this.remoteBlocks) {
+                    result.push(key);
+                }
+
+                if (null == this.getRemoteBlockByLocation(sender.getTargetBlock(null, 50).getLocation())) {
+                    result.push(sender.getTargetBlock(null, 50).getX().toString());
+                }
+                break;
+            }
+            case 2: {
+                result.push(sender.getTargetBlock(null, 50).getY().toString());
+                break;
+            }
+            case 3: {
+                result.push(sender.getTargetBlock(null, 50).getZ().toString());
+                break;
+            }
+            default: {
+                break;
+            }
+        }
+
+        return result;
+    }
+
     checkSetConfigParameters(name: string, ip: string, port: Number, remoteBlockType: string, communicationType: string) {
         return (name.length > 0) && ValidateIPaddress(ip) && (port > 1000) && (remoteBlockType in RemoteBlockType) && (communicationType in CommunicationType);
     }
@@ -364,6 +401,11 @@ export default class RemotePlugin extends JsPlugin {
                         }
                     }
 
+                    if (null != this.getRemoteBlockByName(name)) {
+                        sender.sendMessage(ChatColor.RED + "The name already exists in another remote block");
+                        return false;
+                    }
+
                     remoteBlock = new RemoteBlock(name, block, ip, port, RemoteBlockType[remoteBlockType], CommunicationType[communicationType], this.plugin);
                     this.remoteBlocks[name] = remoteBlock;
 
@@ -380,6 +422,90 @@ export default class RemotePlugin extends JsPlugin {
 
         return true;
 
+    }
+
+    onTabCompleteSet(sender: Player, command: Command, label: string, args: Array<string>): Array<string> {
+        let result: Array<string> = [];
+        // args: x y z name ip port remoteBlockType CommunicationType
+        // args: name ip port remoteBlockType CommunicationType
+
+        switch (args.length) {
+            case 1: {
+                for (let key in this.remoteBlocks) {
+                    result.push(key);
+                }
+                if ('getTargetBlock' in sender) {
+                    if (null == this.getRemoteBlockByLocation(sender.getTargetBlock(null, 50).getLocation())) {
+                        result.push(sender.getTargetBlock(null, 50).getX().toString());
+                    }
+                }
+                break;
+            }
+            case 2: {
+                if (args[0] in this.remoteBlocks) {
+                    result.push("127.0.0.1");
+                } else {
+                    if ('getTargetBlock' in sender) {  
+                        result.push(sender.getTargetBlock(null, 50).getY().toString());
+                    }
+                }
+                break;
+            }
+            case 3: {
+                if (args[0] in this.remoteBlocks) {
+                    result.push(this.httpPort.toString());
+                } else {
+                    if ('getTargetBlock' in sender) {
+                        result.push(sender.getTargetBlock(null, 50).getZ().toString());
+                    }
+                }
+                break;
+            }
+            case 4: {
+                if (args[0] in this.remoteBlocks) {
+                    for (const value in enumKeys(RemoteBlockType)) {
+                        result.push(RemoteBlockType[value]);
+                    }
+                }
+                break;
+            }
+            case 5: {
+                if (args[0] in this.remoteBlocks) {
+                    for (const value in enumKeys(CommunicationType)) {
+                        result.push(CommunicationType[value]);
+                    }
+                } else {
+                    result.push("127.0.0.1");
+                }
+                break;
+            }
+            case 6: {
+                if (!(args[0] in this.remoteBlocks)) {
+                    result.push(this.httpPort.toString());
+                }
+                break;
+            }
+            case 7: {
+                if (!(args[0] in this.remoteBlocks)) {
+                    for (const value in enumKeys(RemoteBlockType)) {
+                        result.push(RemoteBlockType[value]);
+                    }
+                }
+                break;
+            }
+            case 8: {
+                if (!(args[0] in this.remoteBlocks)) {
+                    for (const value in enumKeys(CommunicationType)) {
+                        result.push(CommunicationType[value]);
+                    }
+                }
+                break;
+            }
+            default: {
+                break;
+            }
+        }
+        return result;
     }
 
 }
