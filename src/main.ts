@@ -1,10 +1,10 @@
-import TestPlugin from "./TestPlugin/main.js";
+import RemotePlugin from "./RemotePlugin/main.js";
 
 // Return an array of plugin types that should be loaded and enabled.
 // Add any scriptable plugins you want to load and enable to this array.
 // This must be the last javascript code executed.
 [
-    TestPlugin
+    RemotePlugin
 ]
 
 /* Or you can load javascript plugins yourself like this */
