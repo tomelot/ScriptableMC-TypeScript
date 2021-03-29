@@ -1,3 +1,5 @@
+const arg = require('arg');
+
 import JsPlugin from '../lib/JsPlugin.js';
 import ChatColor from '../lib/org/bukkit/ChatColor.js';
 import CommandSender from '../lib/org/bukkit/command/CommandSender.js';
@@ -53,19 +55,17 @@ enum CommunicationType {
 
 class RemoteBlock {
     armorStand: ArmorStand = null;
+    remoteBlockType: RemoteBlockType;
     name: string;
     ip: string;
     port: Number;
-    remoteBlockType: RemoteBlockType;
-    communicationType: CommunicationType;
     block: Block;
     plugin: Plugin;
 
-    constructor(name: string, block: Block, ip: string, port: Number, remoteBlockType: RemoteBlockType, communicationType: CommunicationType, plugin: Plugin) {
+    constructor(name: string, block: Block, ip: string, port: Number, remoteBlockType: RemoteBlockType, plugin: Plugin) {
         this.setIp(ip);
         this.setPort(port);
         this.setRemoteBlockType(remoteBlockType);
-        this.setCommunicationType(communicationType);
 
         this.block = block;
         this.plugin = plugin;
@@ -92,10 +92,6 @@ class RemoteBlock {
         return this.remoteBlockType;
     }
 
-    getCommunicationType(): CommunicationType {
-        return this.communicationType;
-    }
-
     getName(): string {
         return this.name;
     }
@@ -110,10 +106,6 @@ class RemoteBlock {
 
     setRemoteBlockType(type: RemoteBlockType) {
         this.remoteBlockType = type;
-    }
-
-    setCommunicationType(type: CommunicationType) {
-        this.communicationType = type;
     }
 
     setName(name: string) {
@@ -156,9 +148,30 @@ class RemoteBlock {
     }
 }
 
+class RemoteBlockSender extends RemoteBlock {
+    nameToSend: string;
+
+    constructor(name: string, block: Block, nameToSend: string, ip: string, port: Number, remoteBlockType: RemoteBlockType, plugin: Plugin) {
+        super(name, block, ip, port, remoteBlockType, plugin);
+    }
+
+    getNameToSend(): string {
+        return this.nameToSend;
+    }
+
+    setNameToSend(name: string) {
+        this.nameToSend = name;
+    }
+}
+
+class RemoteBlockReceiver extends RemoteBlock {
+
+}
+
 export default class RemotePlugin extends JsPlugin {
     httpPort = 8080;
-    remoteBlocks = {};
+    remoteBlocksSenders = {};
+    remoteBlocksReceivers = {};
     plugin: Plugin;
 
     onLoad() {
@@ -168,31 +181,35 @@ export default class RemotePlugin extends JsPlugin {
     onEnable() {
         this.registerEvent(BlockRedstoneEvent, this.onBlockRedstoneEvent);
 
-        let setConfigCmd = this.newCommand("remoteBlock-SetConfig");
-        setConfigCmd.setExecutor(this.onSetConfigCmdExecute.bind(this));
-        this.registerCommand(setConfigCmd);
-        setConfigCmd.setTabCompleter(this.onTabCompleteSet.bind(this));
+        let testCmd = this.newCommand("remoteBlock-test"); 
+        testCmd.setExecutor(this.onTestCmdExecute.bind(this));
+        this.registerCommand(testCmd);
+        
+        // let setConfigCmd = this.newCommand("remoteBlock-SetConfig");
+        // setConfigCmd.setExecutor(this.onSetConfigCmdExecute.bind(this));
+        // this.registerCommand(setConfigCmd);
+        // setConfigCmd.setTabCompleter(this.onTabCompleteSet.bind(this));
 
-        let showConfigCmd = this.newCommand("remoteBlock-ShowConfig");
-        showConfigCmd.setExecutor(this.onShowConfigCmdExecute.bind(this));
-        this.registerCommand(showConfigCmd);
-        showConfigCmd.setTabCompleter(this.onTabCompleteDeleteAndShow.bind(this));
+        // let showConfigCmd = this.newCommand("remoteBlock-ShowConfig");
+        // showConfigCmd.setExecutor(this.onShowConfigCmdExecute.bind(this));
+        // this.registerCommand(showConfigCmd);
+        // showConfigCmd.setTabCompleter(this.onTabCompleteDeleteAndShow.bind(this));
 
-        let deleteCmd = this.newCommand("remoteBlock-Delete");
-        deleteCmd.setExecutor(this.onDeleteCmdExecute.bind(this));
-        this.registerCommand(deleteCmd);
-        deleteCmd.setTabCompleter(this.onTabCompleteDeleteAndShow.bind(this));
+        // let deleteCmd = this.newCommand("remoteBlock-Delete");
+        // deleteCmd.setExecutor(this.onDeleteCmdExecute.bind(this));
+        // this.registerCommand(deleteCmd);
+        // deleteCmd.setTabCompleter(this.onTabCompleteDeleteAndShow.bind(this));
 
         this.plugin = this.server.getPluginManager().getPlugins()[0];
-        
+
         // this.server.dispatchCommand(Bukkit.getConsoleSender(), "tell @a hi");
 
         console.log("done");
     }
 
-    getRemoteBlockByLocation(loc: Location): RemoteBlock {
-        for (let key in this.remoteBlocks) {
-            let rb = this.remoteBlocks[key];
+    getRemoteBlockByLocation(remoteBlocks: Record<string, RemoteBlock>, loc: Location): RemoteBlock {
+        for (let key in remoteBlocks) {
+            let rb = remoteBlocks[key];
             if (rb.compareLocation(loc)) {
                 return rb;
             }
@@ -201,11 +218,10 @@ export default class RemotePlugin extends JsPlugin {
         return null;
     }
 
-    getRemoteBlockByName(name: string): RemoteBlock {
-        if (name in this.remoteBlocks) {
-            return this.remoteBlocks[name];
+    getRemoteBlockByName(remoteBlocks: Record<string, RemoteBlock>, name: string): RemoteBlock {
+        if (name in remoteBlocks) {
+            return remoteBlocks[name];
         }
-
         return null;
     }
 
@@ -217,295 +233,310 @@ export default class RemotePlugin extends JsPlugin {
         let block = event.getBlock();
     }
 
-    onDeleteCmdExecute(sender: any, command: Command, label: string, args: Array<string>) {
-        let remoteBlock: RemoteBlock = null;
+    onTestCmdExecute(sender: any, command: Command, label: string, args: Array<string>) {
+        const parsedArgs = arg({
+            '--help': Boolean,
+            '--name': String,
+            '--address': String,
+            '--port': Number,
+        }, { args });
 
-        // args: x y z
-        // args: name
-        if (args.length == 3) {
-            if ('getWorld' in sender) {
-                let loc: Location = new Location(sender.getWorld(), parseFloat(args[0]), parseFloat(args[1]), parseFloat(args[2]));
-                remoteBlock = this.getRemoteBlockByLocation(loc);
-            }
-        } else if (args.length == 1) {
-            let name: string = args[0];
-            remoteBlock = this.getRemoteBlockByName(name);
+        if (parsedArgs['--help']) {
+            sender.sendMessage("help yourself you bitch");
         } else {
-            sender.sendMessage(ChatColor.RED + "Number of parameters is incorrect")
-            return false;
+            sender.sendMessage(JSON.stringify(parsedArgs));
         }
-
-        if (remoteBlock) {
-            if (remoteBlock.getRemoteBlockType() == RemoteBlockType.COMMAND) {
-                if (!sender.isOp()) {
-                    sender.sendMessage(ChatColor.RED + "Permission denied");
-                    return false;
-                }
-            }
-
-            delete this.remoteBlocks[remoteBlock.getName()];
-            remoteBlock.deleteLabel();
-
-            sender.sendMessage(ChatColor.GREEN + "Deleted remote block");
-        } else {
-            sender.sendMessage(ChatColor.RED + "Remote block doesn't exists with that name or location");
-            return false;
-        }
-
-        return true;
-
     }
 
-    onShowConfigCmdExecute(sender: any, command: Command, label: string, args: Array<string>) {
-        let remoteBlock: RemoteBlock = null;
+    // onDeleteCmdExecute(sender: any, command: Command, label: string, args: Array<string>) {
+    //     let remoteBlock: RemoteBlock = null;
 
-        // args: x y z
-        // args: name
-        if (args.length == 3) {
-            if ('getWorld' in sender) {
-                let loc: Location = new Location(sender.getWorld(), parseFloat(args[0]), parseFloat(args[1]), parseFloat(args[2]));
-                remoteBlock = this.getRemoteBlockByLocation(loc);
-            }
-        } else if (args.length == 1) {
-            let name: string = args[0];
-            remoteBlock = this.getRemoteBlockByName(name);
-        } else {
-            sender.sendMessage(ChatColor.RED + "Number of parameters is incorrect");
-            return false;
-        }
+    //     // args: x y z
+    //     // args: name
+    //     if (args.length == 3) {
+    //         if ('getWorld' in sender) {
+    //             let loc: Location = new Location(sender.getWorld(), parseFloat(args[0]), parseFloat(args[1]), parseFloat(args[2]));
+    //             remoteBlock = this.getRemoteBlockByLocation(loc);
+    //         }
+    //     } else if (args.length == 1) {
+    //         let name: string = args[0];
+    //         remoteBlock = this.getRemoteBlockByName(name);
+    //     } else {
+    //         sender.sendMessage(ChatColor.RED + "Number of parameters is incorrect")
+    //         return false;
+    //     }
 
-        if (remoteBlock) {
-            if (remoteBlock.getRemoteBlockType() == RemoteBlockType.COMMAND) {
-                if (!sender.isOp()) {
-                    sender.sendMessage(ChatColor.RED + "Permission denied");
-                    return false;
-                }
-            }
-            let remoteBlockData = { "Name": remoteBlock.getName(), "Ip": remoteBlock.getIp(), "Port": remoteBlock.getPort(), "RemoteBlockType": RemoteBlockType[remoteBlock.getRemoteBlockType()], "CommunicationType": CommunicationType[remoteBlock.getCommunicationType()] };
-            sender.sendMessage(ChatColor.GREEN + JSON.stringify(remoteBlockData));
-        } else {
-            sender.sendMessage(ChatColor.RED + "Remote block doesn't exists with that name or location");
-            return false;
-        }
+    //     if (remoteBlock) {
+    //         if (remoteBlock.getRemoteBlockType() == RemoteBlockType.COMMAND) {
+    //             if (!sender.isOp()) {
+    //                 sender.sendMessage(ChatColor.RED + "Permission denied");
+    //                 return false;
+    //             }
+    //         }
 
-        return true;
-    }
+    //         delete this.remoteBlocks[remoteBlock.getName()];
+    //         remoteBlock.deleteLabel();
 
-    onTabCompleteDeleteAndShow(sender: Player, command: Command, label: string, args: Array<string>): Array<string> {
-        let result: Array<string> = [];
+    //         sender.sendMessage(ChatColor.GREEN + "Deleted remote block");
+    //     } else {
+    //         sender.sendMessage(ChatColor.RED + "Remote block doesn't exists with that name or location");
+    //         return false;
+    //     }
 
-        switch (args.length) {
-            case 1: {
-                for (let key in this.remoteBlocks) {
-                    result.push(key);
-                }
+    //     return true;
 
-                if (null == this.getRemoteBlockByLocation(sender.getTargetBlock(null, 50).getLocation())) {
-                    result.push(sender.getTargetBlock(null, 50).getX().toString());
-                }
-                break;
-            }
-            case 2: {
-                result.push(sender.getTargetBlock(null, 50).getY().toString());
-                break;
-            }
-            case 3: {
-                result.push(sender.getTargetBlock(null, 50).getZ().toString());
-                break;
-            }
-            default: {
-                break;
-            }
-        }
+    // }
 
-        return result;
-    }
+    // onShowConfigCmdExecute(sender: any, command: Command, label: string, args: Array<string>) {
+    //     let remoteBlock: RemoteBlock = null;
 
-    checkSetConfigParameters(name: string, ip: string, port: Number, remoteBlockType: string, communicationType: string) {
-        return (name.length > 0) && ValidateIPaddress(ip) && (port > 1000) && (remoteBlockType in RemoteBlockType) && (communicationType in CommunicationType);
-    }
+    //     // args: x y z
+    //     // args: name
+    //     if (args.length == 3) {
+    //         if ('getWorld' in sender) {
+    //             let loc: Location = new Location(sender.getWorld(), parseFloat(args[0]), parseFloat(args[1]), parseFloat(args[2]));
+    //             remoteBlock = this.getRemoteBlockByLocation(loc);
+    //         }
+    //     } else if (args.length == 1) {
+    //         let name: string = args[0];
+    //         remoteBlock = this.getRemoteBlockByName(name);
+    //     } else {
+    //         sender.sendMessage(ChatColor.RED + "Number of parameters is incorrect");
+    //         return false;
+    //     }
 
-    onSetConfigCmdExecute(sender: any, command: Command, label: string, args: Array<string>) {
-        let name: string = null;
-        let ip: string = null;
-        let port: Number = null;
-        let block: Block = null;
-        let remoteBlock: RemoteBlock = null;
-        let remoteBlockType: string = null;
-        let communicationType: string = null;
+    //     if (remoteBlock) {
+    //         if (remoteBlock.getRemoteBlockType() == RemoteBlockType.COMMAND) {
+    //             if (!sender.isOp()) {
+    //                 sender.sendMessage(ChatColor.RED + "Permission denied");
+    //                 return false;
+    //             }
+    //         }
+    //         let remoteBlockData = { "Name": remoteBlock.getName(), "Ip": remoteBlock.getIp(), "Port": remoteBlock.getPort(), "RemoteBlockType": RemoteBlockType[remoteBlock.getRemoteBlockType()], "CommunicationType": CommunicationType[remoteBlock.getCommunicationType()] };
+    //         sender.sendMessage(ChatColor.GREEN + JSON.stringify(remoteBlockData));
+    //     } else {
+    //         sender.sendMessage(ChatColor.RED + "Remote block doesn't exists with that name or location");
+    //         return false;
+    //     }
 
-        // args: x y z name ip port remoteBlockType CommunicationType
-        // args: name ip port remoteBlockType CommunicationType
+    //     return true;
+    // }
 
-        if (args.length == 8) {
-            if ('getWorld' in sender) {
-                let loc: Location = new Location(sender.getWorld(), parseFloat(args[0]), parseFloat(args[1]), parseFloat(args[2]));
-                name = args[3];
-                ip = args[4];
-                port = parseInt(args[5]);
-                remoteBlockType = args[6].toUpperCase();
-                communicationType = args[7].toUpperCase();
+    // onTabCompleteDeleteAndShow(sender: Player, command: Command, label: string, args: Array<string>): Array<string> {
+    //     let result: Array<string> = [];
 
-                block = loc.getBlock();
-                remoteBlock = this.getRemoteBlockByLocation(loc);
-            }
-        } else if (args.length == 5) {
-            name = args[0];
-            ip = args[1];
-            port = parseInt(args[2]);
-            remoteBlockType = args[3].toUpperCase();
-            communicationType = args[4].toUpperCase();
+    //     switch (args.length) {
+    //         case 1: {
+    //             for (let key in this.remoteBlocks) {
+    //                 result.push(key);
+    //             }
 
-            remoteBlock = this.getRemoteBlockByName(name);
-        } else {
-            sender.sendMessage(ChatColor.RED + "Number of parameters is incorrect");
-            return false;
-        }
+    //             if (null == this.getRemoteBlockByLocation(sender.getTargetBlock(null, 50).getLocation())) {
+    //                 result.push(sender.getTargetBlock(null, 50).getX().toString());
+    //             }
+    //             break;
+    //         }
+    //         case 2: {
+    //             result.push(sender.getTargetBlock(null, 50).getY().toString());
+    //             break;
+    //         }
+    //         case 3: {
+    //             result.push(sender.getTargetBlock(null, 50).getZ().toString());
+    //             break;
+    //         }
+    //         default: {
+    //             break;
+    //         }
+    //     }
 
-        if (!this.checkSetConfigParameters(name, ip, port, remoteBlockType, communicationType)) {
-            sender.sendMessage(ChatColor.RED + "Some of the parameters you entered are incorrect");
-            return false;
-        }
+    //     return result;
+    // }
 
-        if (null != remoteBlock) {
-            console.log("exists");
+    // checkSetConfigParameters(name: string, ip: string, port: Number, remoteBlockType: string, communicationType: string) {
+    //     return (name.length > 0) && ValidateIPaddress(ip) && (port > 1000) && (remoteBlockType in RemoteBlockType) && (communicationType in CommunicationType);
+    // }
 
-            if (remoteBlock.getRemoteBlockType() == RemoteBlockType.COMMAND) {
-                if (!sender.isOp()) {
-                    sender.sendMessage(ChatColor.RED + "Permission denied");
-                    return false;
-                }
-            }
+    // onSetConfigCmdExecute(sender: any, command: Command, label: string, args: Array<string>) {
+    //     let name: string = null;
+    //     let ip: string = null;
+    //     let port: Number = null;
+    //     let block: Block = null;
+    //     let remoteBlock: RemoteBlock = null;
+    //     let remoteBlockType: string = null;
+    //     let communicationType: string = null;
 
-            if (!(name in this.remoteBlocks)) {
-                delete this.remoteBlocks[remoteBlock.name];
-                this.remoteBlocks[name] = remoteBlock;
-            }
+    //     // args: x y z name ip port remoteBlockType CommunicationType
+    //     // args: name ip port remoteBlockType CommunicationType
 
-            remoteBlock.setIp(ip);
-            remoteBlock.setPort(port);
-            remoteBlock.setRemoteBlockType(RemoteBlockType[remoteBlockType]);
-            remoteBlock.setCommunicationType(CommunicationType[communicationType]);
-            remoteBlock.setName(name);
+    //     if (args.length == 8) {
+    //         if ('getWorld' in sender) {
+    //             let loc: Location = new Location(sender.getWorld(), parseFloat(args[0]), parseFloat(args[1]), parseFloat(args[2]));
+    //             name = args[3];
+    //             ip = args[4];
+    //             port = parseInt(args[5]);
+    //             remoteBlockType = args[6].toUpperCase();
+    //             communicationType = args[7].toUpperCase();
 
-            sender.sendMessage(ChatColor.GREEN + "Changed existing remote block");
-        } else {
-            if (block) {
-                if (Material.REDSTONE_LAMP == block.getType()) {
-                    console.log("new");
+    //             block = loc.getBlock();
+    //             remoteBlock = this.getRemoteBlockByLocation(loc);
+    //         }
+    //     } else if (args.length == 5) {
+    //         name = args[0];
+    //         ip = args[1];
+    //         port = parseInt(args[2]);
+    //         remoteBlockType = args[3].toUpperCase();
+    //         communicationType = args[4].toUpperCase();
 
-                    if (CommunicationType[communicationType] == RemoteBlockType.COMMAND) {
-                        if (!sender.isOp()) {
-                            sender.sendMessage(ChatColor.RED + "Permission denied");
-                            return false;
-                        }
-                    }
+    //         remoteBlock = this.getRemoteBlockByName(name);
+    //     } else {
+    //         sender.sendMessage(ChatColor.RED + "Number of parameters is incorrect");
+    //         return false;
+    //     }
 
-                    if (null != this.getRemoteBlockByName(name)) {
-                        sender.sendMessage(ChatColor.RED + "The name already exists in another remote block");
-                        return false;
-                    }
+    //     if (!this.checkSetConfigParameters(name, ip, port, remoteBlockType, communicationType)) {
+    //         sender.sendMessage(ChatColor.RED + "Some of the parameters you entered are incorrect");
+    //         return false;
+    //     }
 
-                    remoteBlock = new RemoteBlock(name, block, ip, port, RemoteBlockType[remoteBlockType], CommunicationType[communicationType], this.plugin);
-                    this.remoteBlocks[name] = remoteBlock;
+    //     if (null != remoteBlock) {
+    //         console.log("exists");
 
-                    sender.sendMessage(ChatColor.GREEN + "Created new remote block");
-                } else {
-                    sender.sendMessage(ChatColor.RED + "Remote block can only be redstone lamp type");
-                    return false;
-                }
-            } else {
-                sender.sendMessage(ChatColor.RED + "Remote block by this name does not exist");
-                return false;
-            }
-        }
+    //         if (remoteBlock.getRemoteBlockType() == RemoteBlockType.COMMAND) {
+    //             if (!sender.isOp()) {
+    //                 sender.sendMessage(ChatColor.RED + "Permission denied");
+    //                 return false;
+    //             }
+    //         }
 
-        return true;
+    //         if (!(name in this.remoteBlocks)) {
+    //             delete this.remoteBlocks[remoteBlock.name];
+    //             this.remoteBlocks[name] = remoteBlock;
+    //         }
 
-    }
+    //         remoteBlock.setIp(ip);
+    //         remoteBlock.setPort(port);
+    //         remoteBlock.setRemoteBlockType(RemoteBlockType[remoteBlockType]);
+    //         remoteBlock.setCommunicationType(CommunicationType[communicationType]);
+    //         remoteBlock.setName(name);
 
-    onTabCompleteSet(sender: Player, command: Command, label: string, args: Array<string>): Array<string> {
-        let result: Array<string> = [];
-        // args: x y z name ip port remoteBlockType CommunicationType
-        // args: name ip port remoteBlockType CommunicationType
+    //         sender.sendMessage(ChatColor.GREEN + "Changed existing remote block");
+    //     } else {
+    //         if (block) {
+    //             if (Material.REDSTONE_LAMP == block.getType()) {
+    //                 console.log("new");
 
-        switch (args.length) {
-            case 1: {
-                for (let key in this.remoteBlocks) {
-                    result.push(key);
-                }
-                if ('getTargetBlock' in sender) {
-                    if (null == this.getRemoteBlockByLocation(sender.getTargetBlock(null, 50).getLocation())) {
-                        result.push(sender.getTargetBlock(null, 50).getX().toString());
-                    }
-                }
-                break;
-            }
-            case 2: {
-                if (args[0] in this.remoteBlocks) {
-                    result.push("127.0.0.1");
-                } else {
-                    if ('getTargetBlock' in sender) {  
-                        result.push(sender.getTargetBlock(null, 50).getY().toString());
-                    }
-                }
-                break;
-            }
-            case 3: {
-                if (args[0] in this.remoteBlocks) {
-                    result.push(this.httpPort.toString());
-                } else {
-                    if ('getTargetBlock' in sender) {
-                        result.push(sender.getTargetBlock(null, 50).getZ().toString());
-                    }
-                }
-                break;
-            }
-            case 4: {
-                if (args[0] in this.remoteBlocks) {
-                    for (const value in enumKeys(RemoteBlockType)) {
-                        result.push(RemoteBlockType[value]);
-                    }
-                }
-                break;
-            }
-            case 5: {
-                if (args[0] in this.remoteBlocks) {
-                    for (const value in enumKeys(CommunicationType)) {
-                        result.push(CommunicationType[value]);
-                    }
-                } else {
-                    result.push("127.0.0.1");
-                }
-                break;
-            }
-            case 6: {
-                if (!(args[0] in this.remoteBlocks)) {
-                    result.push(this.httpPort.toString());
-                }
-                break;
-            }
-            case 7: {
-                if (!(args[0] in this.remoteBlocks)) {
-                    for (const value in enumKeys(RemoteBlockType)) {
-                        result.push(RemoteBlockType[value]);
-                    }
-                }
-                break;
-            }
-            case 8: {
-                if (!(args[0] in this.remoteBlocks)) {
-                    for (const value in enumKeys(CommunicationType)) {
-                        result.push(CommunicationType[value]);
-                    }
-                }
-                break;
-            }
-            default: {
-                break;
-            }
-        }
-        return result;
-    }
+    //                 if (CommunicationType[communicationType] == RemoteBlockType.COMMAND) {
+    //                     if (!sender.isOp()) {
+    //                         sender.sendMessage(ChatColor.RED + "Permission denied");
+    //                         return false;
+    //                     }
+    //                 }
+
+    //                 if (null != this.getRemoteBlockByName(name)) {
+    //                     sender.sendMessage(ChatColor.RED + "The name already exists in another remote block");
+    //                     return false;
+    //                 }
+
+    //                 remoteBlock = new RemoteBlock(name, block, ip, port, RemoteBlockType[remoteBlockType], CommunicationType[communicationType], this.plugin);
+    //                 this.remoteBlocks[name] = remoteBlock;
+
+    //                 sender.sendMessage(ChatColor.GREEN + "Created new remote block");
+    //             } else {
+    //                 sender.sendMessage(ChatColor.RED + "Remote block can only be redstone lamp type");
+    //                 return false;
+    //             }
+    //         } else {
+    //             sender.sendMessage(ChatColor.RED + "Remote block by this name does not exist");
+    //             return false;
+    //         }
+    //     }
+
+    //     return true;
+
+    // }
+
+    // onTabCompleteSet(sender: Player, command: Command, label: string, args: Array<string>): Array<string> {
+    //     let result: Array<string> = [];
+    //     // args: x y z name ip port remoteBlockType CommunicationType
+    //     // args: name ip port remoteBlockType CommunicationType
+
+    //     switch (args.length) {
+    //         case 1: {
+    //             for (let key in this.remoteBlocks) {
+    //                 result.push(key);
+    //             }
+    //             if ('getTargetBlock' in sender) {
+    //                 if (null == this.getRemoteBlockByLocation(sender.getTargetBlock(null, 50).getLocation())) {
+    //                     result.push(sender.getTargetBlock(null, 50).getX().toString());
+    //                 }
+    //             }
+    //             break;
+    //         }
+    //         case 2: {
+    //             if (args[0] in this.remoteBlocks) {
+    //                 result.push("127.0.0.1");
+    //             } else {
+    //                 if ('getTargetBlock' in sender) {
+    //                     result.push(sender.getTargetBlock(null, 50).getY().toString());
+    //                 }
+    //             }
+    //             break;
+    //         }
+    //         case 3: {
+    //             if (args[0] in this.remoteBlocks) {
+    //                 result.push(this.httpPort.toString());
+    //             } else {
+    //                 if ('getTargetBlock' in sender) {
+    //                     result.push(sender.getTargetBlock(null, 50).getZ().toString());
+    //                 }
+    //             }
+    //             break;
+    //         }
+    //         case 4: {
+    //             if (args[0] in this.remoteBlocks) {
+    //                 for (const value in enumKeys(RemoteBlockType)) {
+    //                     result.push(RemoteBlockType[value]);
+    //                 }
+    //             }
+    //             break;
+    //         }
+    //         case 5: {
+    //             if (args[0] in this.remoteBlocks) {
+    //                 for (const value in enumKeys(CommunicationType)) {
+    //                     result.push(CommunicationType[value]);
+    //                 }
+    //             } else {
+    //                 result.push("127.0.0.1");
+    //             }
+    //             break;
+    //         }
+    //         case 6: {
+    //             if (!(args[0] in this.remoteBlocks)) {
+    //                 result.push(this.httpPort.toString());
+    //             }
+    //             break;
+    //         }
+    //         case 7: {
+    //             if (!(args[0] in this.remoteBlocks)) {
+    //                 for (const value in enumKeys(RemoteBlockType)) {
+    //                     result.push(RemoteBlockType[value]);
+    //                 }
+    //             }
+    //             break;
+    //         }
+    //         case 8: {
+    //             if (!(args[0] in this.remoteBlocks)) {
+    //                 for (const value in enumKeys(CommunicationType)) {
+    //                     result.push(CommunicationType[value]);
+    //                 }
+    //             }
+    //             break;
+    //         }
+    //         default: {
+    //             break;
+    //         }
+    //     }
+    //     return result;
+    // }
 
 }
